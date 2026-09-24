@@ -153,3 +153,68 @@ def test_canonical_rows_prefers_the_masked_copy():
     got = canonical_rows(rows)
     assert len(got) == 2
     assert [r.rel_path for r in got if r.group_id == 1] == ["seg/images/a.jpg"]
+
+
+# --- option scoring --------------------------------------------------------
+
+from safegi.inference.base import (  # noqa: E402
+    LETTERS, build_prompt, score_item, shuffled_options,
+)
+
+_OPTS = ["yes", "no", "cannot be determined from this image"]
+
+
+class _Stub:
+    """Scores by option content, so reordering must not change its answer."""
+    name, revision, precision = "stub", "0", "fp32"
+
+    def __init__(self, target="no"):
+        self.target = target
+
+    def letter_logprobs(self, image, prompt, letters):
+        out = {}
+        for line in prompt.splitlines():
+            if line[:1] in LETTERS and line[1:2] == ")":
+                out[line[0]] = 2.0 if line[3:] == self.target else -1.0
+        return {k: out.get(k, -9.0) for k in letters}
+
+    def sequence_logprob(self, image, prompt, continuation):
+        return -1.0, 1
+
+
+class _LetterBiased(_Stub):
+    """Always prefers 'A', whatever it says."""
+    def letter_logprobs(self, image, prompt, letters):
+        return {l: (3.0 if l == "A" else -1.0) for l in letters}
+
+
+def test_option_shuffle_is_deterministic_and_total():
+    a = shuffled_options("q1", _OPTS)
+    assert a == shuffled_options("q1", _OPTS)
+    assert sorted(a) == sorted(_OPTS)
+
+
+def test_prompt_lists_every_option_once():
+    prompt = build_prompt("Is a polyp visible?", _OPTS)
+    for i, opt in enumerate(_OPTS):
+        assert f"{LETTERS[i]}) {opt}" in prompt
+
+
+def test_scores_normalise_to_one_and_pick_content():
+    s = score_item(_Stub("no"), None, "q", _OPTS, "q1", with_fulltext=False)
+    assert s.chosen_option == "no"
+    assert abs(sum(np.exp(v) for v in s.option_logprobs.values()) - 1.0) < 1e-9
+    assert set(s.option_logprobs) == set(_OPTS)
+
+
+def test_answer_is_stable_under_reordering():
+    seen = {score_item(_Stub("no"), None, "q", _OPTS, f"q{k}",
+                       with_fulltext=False).chosen_option for k in range(6)}
+    assert seen == {"no"}
+
+
+def test_position_bias_is_detectable():
+    """The probe's check must actually fire on a letter-biased model."""
+    seen = {score_item(_LetterBiased(), None, "q", _OPTS, f"q{k}",
+                       with_fulltext=False).chosen_option for k in range(6)}
+    assert len(seen) > 1
