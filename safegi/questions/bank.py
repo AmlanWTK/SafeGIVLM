@@ -185,10 +185,21 @@ def canonical_rows(rows) -> list:
     return [best[g] for g in sorted(best)]
 
 
+# Placeholders that mean "no class label". 02_group_map.py fills missing
+# labels with "(none)", so a resolver that only knew about None silently
+# dropped every Kvasir-SEG row from the class-label questions.
+_MISSING_LABELS = {"", "none", "(none)", "nan", "null", "na"}
+
+
 def _resolved_class(row) -> str:
     """Kvasir-SEG rows carry no class label; by definition they are polyps."""
     lbl = getattr(row, "class_label", None)
-    if lbl is None or (isinstance(lbl, float) and np.isnan(lbl)) or str(lbl) in ("", "None", "nan"):
+    missing = (
+        lbl is None
+        or (isinstance(lbl, float) and np.isnan(lbl))
+        or str(lbl).strip().lower() in _MISSING_LABELS
+    )
+    if missing:
         return "polyps" if row.pool == "polyp" else ""
     return str(lbl)
 

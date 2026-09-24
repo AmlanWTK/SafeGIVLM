@@ -189,17 +189,21 @@ budget:
     location: all
     finding_class: all
   paraphrase_fraction: 0.25     # of A items, sampled by group
+  # Raised from 1,000 C and 400 D after the first build: at the original
+  # budget the test split held only ~125 items per premise subtype, far too
+  # few for a per-mechanism AUROC with a usable interval. C and D items are
+  # posed on clean images only, so the extra cost is small.
   false_premise:
-    polyp_morphology: 300
-    ulcer_bleeding: 200
-    wrong_organ: 300
-    wrong_procedure: 200
+    polyp_morphology: 500
+    ulcer_bleeding: 300
+    wrong_organ: 500
+    wrong_procedure: 300
   unanswerable:
-    histology: 120
-    biopsy_malignancy: 80
-    prior_colonoscopy: 80
-    patient_age: 80
-    symptoms: 40
+    histology: 200
+    biopsy_malignancy: 150
+    prior_colonoscopy: 150
+    patient_age: 150
+    symptoms: 100
   clinician_review_sample: 200  # stratified across every template
 
 # Mask-derived facts
