@@ -109,3 +109,47 @@ def test_unsafe_target():
     assert assign_unsafe(_record(answerable=False, gave_definite_answer=False)) is False
     assert assign_unsafe(_record(correct=False)) is True
     assert assign_unsafe(_record(correct=True)) is False
+
+
+# --- question bank ---------------------------------------------------------
+
+from safegi.questions.bank import canonical_rows, connected_components  # noqa: E402
+
+
+def test_connected_components_counts_blobs():
+    m = np.zeros((60, 60), dtype=bool)
+    m[5:15, 5:15] = True          # 100 px
+    m[40:50, 40:50] = True        # 100 px
+    m[0, 59] = True               # 1 px, noise
+    comps = connected_components(m, min_area=50)
+    assert len(comps) == 2
+    assert all(c.sum() == 100 for c in comps)
+
+
+def test_connected_components_joins_an_l_shape():
+    """A single region the scanline meets in two places must not split."""
+    m = np.zeros((40, 40), dtype=bool)
+    m[5:30, 5:10] = True
+    m[25:30, 5:35] = True
+    assert len(connected_components(m, min_area=10)) == 1
+
+
+def test_connected_components_empty():
+    assert connected_components(np.zeros((20, 20), dtype=bool), min_area=1) == []
+
+
+class _Row:
+    def __init__(self, group_id, dataset, pool, rel_path):
+        self.group_id, self.dataset, self.pool, self.rel_path = group_id, dataset, pool, rel_path
+        self.class_label = None
+
+
+def test_canonical_rows_prefers_the_masked_copy():
+    rows = [
+        _Row(1, "hyperkvasir-labeled", "polyp", "hk/polyps/a.jpg"),
+        _Row(1, "kvasir-seg-images", "polyp", "seg/images/a.jpg"),
+        _Row(2, "hyperkvasir-labeled", "colonic_negative", "hk/cecum/b.jpg"),
+    ]
+    got = canonical_rows(rows)
+    assert len(got) == 2
+    assert [r.rel_path for r in got if r.group_id == 1] == ["seg/images/a.jpg"]
