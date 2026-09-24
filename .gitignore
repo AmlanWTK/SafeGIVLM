@@ -1,0 +1,63 @@
+# ---------------------------------------------------------------------
+# SafeGI-VLM
+#
+# Rule: code and small text artefacts are versioned. Images never are.
+# Kvasir-SEG and HyperKvasir are research-and-education-only and may not
+# be redistributed, and git history cannot be cleanly purged after a push.
+# ---------------------------------------------------------------------
+
+# Datasets and derived images -----------------------------------------
+data/
+!data/manifests/
+data/manifests/*.parquet          # per-file tables can get large
+!data/manifests/*.json
+!data/manifests/*.yaml
+!data/manifests/*.csv
+
+# Large results --------------------------------------------------------
+results/**/*.parquet
+results/**/*.npy
+results/**/*.npz
+!results/final/numbers.json       # every manuscript number lives here
+
+# Model weights and adapters -------------------------------------------
+models/
+*.pt
+*.pth
+*.ckpt
+*.safetensors
+*.gguf
+*.pkl
+
+# Secrets --------------------------------------------------------------
+.env
+*.token
+kaggle.json
+hf_token*
+
+# Python ---------------------------------------------------------------
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Notebooks ------------------------------------------------------------
+.ipynb_checkpoints/
+notebooks/scratch/
+
+# Editors and OS -------------------------------------------------------
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Logs and temporary files ---------------------------------------------
+*.log
+tmp/
+scratch/

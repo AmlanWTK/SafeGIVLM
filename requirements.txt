@@ -1,0 +1,28 @@
+# Core — needed for every phase
+numpy>=1.26
+pandas>=2.1
+pillow>=10.0
+pyarrow>=14.0
+tqdm>=4.66
+pyyaml>=6.0
+imagehash>=4.3
+
+# Phase 1 onwards — inference
+# torch is deliberately unpinned here: install the build that matches your
+# CUDA version first, then the rest of this file.
+# torch
+transformers>=4.50
+accelerate>=0.30
+bitsandbytes>=0.43        # 4-bit NF4 for the 7B model on a 16 GB card
+sentencepiece>=0.2
+
+# Phase 3 onwards — features and estimator
+scikit-learn>=1.4
+scipy>=1.11
+
+# Phase 10 onwards — figures
+matplotlib>=3.8
+
+# Development
+pytest>=8.0
+ruff>=0.5

@@ -1,0 +1,19 @@
+# Copy to configs/paths.yaml and edit for your machine.
+# paths.yaml is git-ignored, so each of us can use a different drive.
+
+data_root: "E:/OurRe"          # where the extracted datasets live
+
+datasets:
+  kvasir_seg:        "Kvasir-SEG"
+  hyperkvasir:       "hyper-kvasir/labeled-images"
+  kvasir_vqa:        "kvasir-vqa"          # not yet downloaded
+  polypgen:          "external/PolypGen"   # sealed until Phase 7
+  cvc_clinicdb:      "external/CVC-ClinicDB"
+  etis:              "external/ETIS-LaribPolypDB"
+
+work_root: "E:/OurRe/_work"     # interim and processed images; never committed
+results_root: "results"
+
+# Fixed across every run. Changing either needs a note in docs/decisions.md.
+image_size: 512                 # corruptions are applied after this resize
+random_seed: 20260924
