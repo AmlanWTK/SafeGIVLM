@@ -204,7 +204,11 @@ budget:
     prior_colonoscopy: 150
     patient_age: 150
     symptoms: 100
-  clinician_review_sample: 200  # stratified across every template
+  # Review is at TEMPLATE level, not item level: the A answers come from
+  # published masks and labels, so what needs a clinician is each C and D
+  # template's claim - that the premise is contradicted, or that the answer
+  # is not in an endoscopic image at all.
+  review_examples_per_template: 3
 
 # Mask-derived facts
 mask:

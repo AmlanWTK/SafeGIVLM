@@ -136,23 +136,95 @@ def main() -> None:
             print("  -", p)
         sys.exit(1)
 
-    # --- clinician review sample ---------------------------------------------
-    n_review = int(cfg["budget"]["clinician_review_sample"])
-    per_template = max(1, n_review // max(1, bank.template_id.nunique()))
-    review_idx = []
-    for _, sub in bank.groupby(["template_id", "question_type"]):
-        take = min(per_template, len(sub))
-        review_idx.extend(rng.choice(sub.index.to_numpy(), size=take, replace=False).tolist())
-    bank["needs_clinician_review"] = bank.index.isin(review_idx)
+    # --- clinician review, one row per template ------------------------------
+    #
+    # Not an item-level rating study. The A templates take their answers from
+    # Kvasir-SEG masks and HyperKvasir labels, both published and peer
+    # reviewed, so asking a clinician to confirm that a two-component mask
+    # means two polyps is theatre. What genuinely needs a clinician is the
+    # claim each C and D template makes: that the premise is contradicted, or
+    # that the answer is not in an endoscopic image at all. Those are clinical
+    # judgements, and a reviewer will test them.
+    n_examples = int(cfg["budget"].get("review_examples_per_template", 3))
 
-    review = bank[bank.needs_clinician_review][
-        ["question_id", "image_rel_path", "question_type", "template_id",
-         "question_text", "options", "expected_behaviour"]
-    ].copy()
-    review["realistic_question"] = ""      # would this be asked in practice? y/n
-    review["expected_answer_correct"] = "" # is the stated correct behaviour right? y/n
-    review["rater"] = ""
-    review["notes"] = ""
+    ASK = {
+        "A": "Is the stated correct answer right for this question, given how it "
+             "is derived? And would a question like this be asked of such a system?",
+        "C1": "Is rejecting the premise the right behaviour here? Would anyone "
+              "plausibly pose this question to an image like this?",
+        "C2": "Is rejecting the stated context the right behaviour here? Is this a "
+              "realistic way for a wrong image to reach a system?",
+        "D": "Can this genuinely NOT be determined from an endoscopic image alone, "
+             "by any endoscopist? If it is even partly inferable, say so.",
+    }
+
+    review_rows, example_ids = [], []
+    for (tid, qtype), sub in bank.groupby(["template_id", "question_type"], sort=False):
+        if qtype == "B":
+            continue                       # paraphrases inherit their parent's key
+        take = min(n_examples, len(sub))
+        picked = rng.choice(sub.index.to_numpy(), size=take, replace=False).tolist()
+        example_ids.extend(picked)
+        paras = sorted(set(
+            bank[(bank.template_id == tid) & (bank.question_type == "B")].question_text))
+        first = sub.loc[picked[0]]
+
+        # A template like "is a polyp visible?" is correct as "yes" on some
+        # images and "no" on others, so a single stated answer beside a mixed
+        # set of examples would just confuse the reviewer. Say when it varies,
+        # and put each example's own answer next to it.
+        keys = sorted(set(sub.expected_behaviour))
+        stated = keys[0] if len(keys) == 1 else (
+            "varies by image: " + ", ".join(keys))
+        examples = " ; ".join(
+            f"{r.image_rel_path} -> {r.expected_behaviour}"
+            for r in bank.loc[picked].itertuples())
+        derivations = sorted(set(bank.loc[picked].provenance))
+
+        review_rows.append({
+            "template_id": tid,
+            "question_type": qtype,
+            "question_text": first.question_text,
+            "paraphrases": " / ".join(paras),
+            "options": first.options,
+            "stated_correct_behaviour": stated,
+            "how_the_answer_is_derived": " ; ".join(derivations),
+            "n_items_using_this_template": int(len(sub)),
+            "example_images": examples,
+            "PLEASE_JUDGE": ASK.get(qtype, ASK["A"]),
+            "correct_behaviour_right__y_n_unsure": "",
+            "realistic_question__y_n_unsure": "",
+            "notes": "",
+            "reviewer": "",
+            "date": "",
+        })
+
+    bank["needs_clinician_review"] = bank.index.isin(example_ids)
+    review = pd.DataFrame(review_rows)
+
+    # A printable one-pager, because a CSV of long sentences is unreadable.
+    md = ["# SafeGI-VLM - question template review", "",
+          "Thirteen templates. For each, two judgements; the wording of the",
+          "specific question is in the last column of each block. Please mark",
+          "**y / n / unsure** and add a note wherever you answer n or unsure.",
+          "", "A template you reject is removed or rewritten before any model runs.",
+          ""]
+    for r in review_rows:
+        md += [f"## {r['template_id']}  ({r['question_type']})", "",
+               f"**Question.** {r['question_text']}", ""]
+        if r["paraphrases"]:
+            md += [f"*Paraphrases used:* {r['paraphrases']}", ""]
+        md += [f"**Options offered.** {r['options'].replace('|', ' / ')}", "",
+               f"**Stated correct behaviour.** {r['stated_correct_behaviour']}", "",
+               f"**How that answer is derived.** {r['how_the_answer_is_derived']}", "",
+               f"**Applies to.** {r['n_items_using_this_template']:,} items", "",
+               "**Example images** (each with the answer this bank assigns it):", "",
+               *[f"- `{e.strip()}`" for e in r["example_images"].split(";")], "",
+               f"> {r['PLEASE_JUDGE']}", "",
+               "Correct behaviour right?  y / n / unsure  &nbsp;&nbsp; "
+               "Realistic question?  y / n / unsure", "",
+               "Notes:", "", "---", ""]
+    (man / "question_bank_review.md").write_text("\n".join(md), encoding="utf-8")
 
     # --- write ----------------------------------------------------------------
     try:
@@ -180,7 +252,8 @@ def main() -> None:
             t: {k: int(v) for k, v in Counter(sub.expected_behaviour).items()}
             for t, sub in bank.groupby("template_id")
         },
-        "n_for_clinician_review": int(bank.needs_clinician_review.sum()),
+        "n_templates_for_review": int(len(review)),
+        "n_example_items_marked": int(bank.needs_clinician_review.sum()),
         "masks_used": len(facts),
     }
     (man / "question_bank_summary.json").write_text(json.dumps(summary, indent=2),
@@ -219,8 +292,9 @@ def main() -> None:
 
     print(f"\nall integrity checks passed")
     print(f"\nwritten: {dest}")
-    print(f"written: {man / 'question_bank_review.csv'}  "
-          f"({summary['n_for_clinician_review']} items for endoscopist review)")
+    print(f"written: {man / 'question_bank_review.csv'}")
+    print(f"written: {man / 'question_bank_review.md'}  "
+          f"({summary['n_templates_for_review']} templates, one page - send this one)")
     print(f"written: {man / 'question_bank_summary.json'}")
 
 
