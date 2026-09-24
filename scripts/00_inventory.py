@@ -248,23 +248,28 @@ def duplicate_report(df: pd.DataFrame, hamming_threshold: int = 4) -> dict:
         out["near_duplicates"] = "no hashes computed"
         return out
 
-    # 64-bit hex hashes -> bit matrix, so Hamming distance is a matrix op.
-    unpacked = np.unpackbits(
-        np.array([[int(h[i:i + 2], 16) for i in range(0, 16, 2)] for h in sub.phash],
-                 dtype=np.uint8),
-        axis=1,
-    )
+    # 64-bit hex hashes -> one uint64 per image. Hamming distance is then
+    # popcount(a XOR b), computed a block of rows at a time.
+    #
+    # The obvious version - broadcasting an (n, n, 64) bit array - allocates
+    # over a gigabyte per block at n ~ 11k and thrashes. This keeps the
+    # working set to (block x n) 8-byte words, a few tens of MB.
+    codes = np.array([int(h, 16) for h in sub.phash], dtype=np.uint64)
+    popcount8 = np.array([bin(i).count("1") for i in range(256)], dtype=np.uint8)
+
+    def hamming_block(a: np.ndarray, b: np.ndarray) -> np.ndarray:
+        x = np.bitwise_xor(a[:, None], b[None, :])
+        return popcount8[x.view(np.uint8).reshape(*x.shape, 8)].sum(axis=2, dtype=np.uint8)
 
     pairs = []
-    n = len(unpacked)
-    block = 2048
+    n = len(codes)
+    block = max(1, min(512, n))
     for start in tqdm(range(0, n, block), desc="near-dup", unit="blk"):
         stop = min(start + block, n)
-        d = (unpacked[start:stop, None, :] != unpacked[None, :, :]).sum(axis=2)
+        d = hamming_block(codes[start:stop], codes)
         idx_i, idx_j = np.nonzero(d <= hamming_threshold)
         for i, j in zip(idx_i, idx_j):
-            gi = start + int(i)
-            gj = int(j)
+            gi, gj = start + int(i), int(j)
             if gi < gj:
                 pairs.append((gi, gj, int(d[i, j])))
 
