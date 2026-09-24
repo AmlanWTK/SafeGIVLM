@@ -1,0 +1,138 @@
+# Which class serves which role in the study.
+#
+# Settled 2026-09-24 from the Phase 0 inventory and grouping. Changing any
+# assignment here changes what the paper claims, so every change needs a
+# dated entry in docs/decisions.md.
+#
+# Group counts are at Hamming <= 4 with dual-hash agreement, and are the
+# numbers that matter - image counts overstate the sample wherever a class
+# is video-derived.
+
+version: 1
+
+grouping:
+  hamming: 4
+  dual_hash: true
+  rationale: >
+    Beyond H=4 the largest group grows almost one-for-one with each image
+    added, i.e. new links merge existing clusters rather than finding new
+    duplicates. Confirmed visually on a 40-pair contact sheet.
+
+pools:
+
+  # ---- the primary task: polyp presence, count, in-frame location --------
+
+  polyp:
+    datasets: [kvasir-seg-images]
+    classes: [polyps]
+    images: 1028
+    groups: 1024
+    with_masks: 1000
+    role: primary_positive
+    note: >
+      Kvasir-SEG's 1,000 images are byte-identical to 1,000 of HyperKvasir's
+      1,028 polyp frames under different filenames. One pool, not two.
+      53 masks exceed 40% of the frame and drop out of Phase 6 only.
+
+  colonic_negative:
+    classes: [cecum, retroflex-rectum]
+    images: 1400
+    groups: 1396
+    role: primary_negative
+    note: >
+      Polyp-free colonic frames. Carries the negative half of the presence
+      task and every C1 false-premise item.
+
+  # ---- supporting roles ---------------------------------------------------
+
+  colonic_pathology_nonpolyp:
+    classes:
+      - ulcerative-colitis-grade-0-1
+      - ulcerative-colitis-grade-1
+      - ulcerative-colitis-grade-1-2
+      - ulcerative-colitis-grade-2
+      - ulcerative-colitis-grade-2-3
+      - ulcerative-colitis-grade-3
+      - hemorrhoids
+    images: 857
+    groups: 853
+    role: c1_false_premise
+    note: >
+      Real colonic pathology that is not a polyp. Asking "what type of polyp
+      is visible?" here is a harder and fairer false-premise test than asking
+      it of normal mucosa.
+
+  natural_degradation:
+    classes: [bbps-0-1, impacted-stool]
+    images: 777
+    groups: 429
+    role: natural_degradation
+    sample_by: group
+    note: >
+      Genuinely hard-to-read colonic frames, scored as such by the original
+      annotators. Used to show the synthetic severities fall inside the range
+      of real image quality. MUST be sampled by group: 777 images are only
+      429 independent scenes.
+
+  upper_gi:
+    classes:
+      - pylorus
+      - z-line
+      - retroflex-stomach
+      - esophagitis-a
+      - esophagitis-b-d
+      - barretts
+      - barretts-short-segment
+    images: 3452
+    groups: 3447
+    role: c2_false_context
+    note: >
+      Used ONLY for false-context questions ("in this image of the colon...").
+      Never as polyp-free negatives: a model separates stomach from colon
+      trivially, which would turn "is a polyp visible?" into "is this the
+      colon?" and inflate presence accuracy through an irrelevant cue.
+
+  # ---- excluded ------------------------------------------------------------
+
+  prep_adequate:
+    classes: [bbps-2-3]
+    images: 1148
+    groups: 326
+    role: excluded
+    reason: >
+      Colonic and adequately prepped, but never annotated for polyps, so it
+      cannot be assumed polyp-free. With 1,396 confirmed negatives already in
+      hand it is not needed. Held in reserve; admitting it would require
+      clinician review of a sample first.
+
+  dyed:
+    classes: [dyed-lifted-polyps, dyed-resection-margins]
+    images: 1991
+    groups: 1985
+    role: excluded
+    reason: >
+      Submucosal dye is a strong spurious cue for "polyp" that has nothing to
+      do with lesion appearance.
+
+  too_few:
+    classes: [ileum]
+    images: 9
+    groups: 9
+    role: excluded
+    reason: Too few frames to support any stratified analysis.
+
+# ---- split proportions, over GROUPS not images ----------------------------
+#
+# train exists even though the primary model is zero-shot: if Checkpoint 1
+# forces LoRA adaptation, the split cannot be carved out afterwards without
+# invalidating everything downstream.
+
+splits:
+  seed: 20260924
+  proportions:
+    train: 0.25        # optional LoRA adaptation only
+    est_train: 0.30    # mechanism heads, flat baselines, feature scaling
+    cal: 0.20          # conformal threshold; SEALED until Phase 5
+    test: 0.25         # opened exactly once, in Phase 5
+  stratify_by: [pool, class_label, mask_area_tertile]
+  unit: group_id
